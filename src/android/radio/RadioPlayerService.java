@@ -293,12 +293,37 @@ public class RadioPlayerService extends Service {
         }
     }
 
+    public void pause() {
+        if (this.mRadioPlayer == null) {
+            this.notifyRadioPaused();
+            return;
+        }
+
+        if (this.mRadioState == State.PLAYING) { // || this.mRadioState == State.STOPPED_FOCUS_LOSS) {
+            // this.mRadioPlayer.pause();
+            this.mRadioPlayer.setPlayWhenReady(false);
+        }
+    }
+
     public boolean isPlaying() {
         if (State.PLAYING == this.mRadioState) {
             return true;
         }
 
         return false;
+    }
+
+    public long getDuration() {
+        return this.mRadioPlayer.getDuration();
+    }
+
+    public long seekTo(long position) {
+        this.mRadioPlayer.seekTo(position);
+        return position;
+    }
+
+    public long getCurrentPosition() {
+        return this.mRadioPlayer.getCurrentPosition();
     }
 
     public void registerListener(RadioListener mListener) {
@@ -329,6 +354,12 @@ public class RadioPlayerService extends Service {
     private void notifyRadioStopped() {
         for (RadioListener mRadioListener : this.mListenerList) {
             mRadioListener.onRadioStopped();
+        }
+    }
+
+    private void notifyRadioPaused() {
+        for (RadioListener mRadioListener : this.mListenerList) {
+            mRadioListener.onRadioPaused();
         }
     }
 

@@ -6,6 +6,7 @@ public interface RadioListener {
     void onRadioDisconnected();
     void onRadioStarted();
     void onRadioStopped();
+    void onRadioPaused();
     void onRadioStoppedFocusLoss();
     void onError();
 }

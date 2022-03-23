@@ -117,6 +117,52 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
             }
 
             callbackContext.success();
+        } else if ("pause".equals(action)) {
+            this.requestedPlay = null;
+
+            if (this.isConnected) {
+                try {
+                    this.mRadioManager.pauseRadio();
+                } catch (Exception e) {
+                    log("Exception occurred during pause: ".concat(e.getMessage()));
+                    callbackContext.error(e.getMessage());
+                    return true;
+                }
+            }
+
+            callbackContext.success();
+        } else if ("isPlaying".equals(action)) {
+            if (this.isConnected) {
+                callbackContext.success(this.mRadioManager.isPlaying() ? 1 : 0);
+            } else {
+                callbackContext.error("not connected");
+            }
+        } else if ("getProgress".equals(action)) {
+            if (this.isConnected) {
+                // callbackContext.success((int) this.mRadioManager.getProgress());
+                callbackContext.success(this.mRadioManager.getProgress());
+            } else {
+                callbackContext.error("not connected");
+            }
+        } else if ("seekTo".equals(action)) {
+            if (this.isConnected) {
+                long position = args.getLong(0);
+                try {
+                    this.mRadioManager.seekTo(position);
+                    callbackContext.success();
+                } catch (Exception e) {
+                    log("Exception occurred during seekTo: ".concat(e.getMessage()));
+                    callbackContext.error(e.getMessage());
+                }
+            } else {
+                callbackContext.error("not connected");
+            }
+        } else if ("getDuration".equals(action)) {
+            if (this.isConnected) {
+                callbackContext.success((int) this.mRadioManager.getDuration());
+            } else {
+                callbackContext.error("not connected");
+            }
         } else {
             log("Called invalid action: " + action);
             return false;
@@ -169,6 +215,12 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
     public void onRadioStopped() {
         log("RADIO STATE - STOPPED...");
         this.sendListenerResult("STOPPED");
+    }
+
+    @Override
+    public void onRadioPaused() {
+        log("RADIO STATE - PAUSED...");
+        this.sendListenerResult("PAUSED");
     }
 
     @Override

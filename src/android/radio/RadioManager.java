@@ -9,6 +9,9 @@ import android.os.IBinder;
 import android.util.Log;
 import android.app.Activity;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -141,6 +144,14 @@ public class RadioManager implements IRadioManager {
     }
 
     /**
+     * Pause Radio Streaming
+     */
+    @Override
+    public void pauseRadio() {
+        this.mService.pause();
+    }
+
+    /**
      * Check if radio is playing
      * @return
      */
@@ -148,6 +159,28 @@ public class RadioManager implements IRadioManager {
     public boolean isPlaying() {
         log("IsPlaying : " + this.mService.isPlaying());
         return this.mService.isPlaying();
+    }
+
+    @Override
+    public long getDuration() {
+        return this.mService.getDuration();
+    }
+
+    @Override
+    public JSONObject getProgress() {
+        JSONObject ret = new JSONObject();
+        try {
+            ret.put("position", this.mService.getCurrentPosition());
+            ret.put("duration", this.mService.getDuration());
+        } catch (JSONException e) {
+            log("Failed to create status details" + e);
+        }
+        return ret;
+    }
+
+    @Override
+    public long seekTo(long position) {
+        return this.mService.seekTo(position);
     }
 
     /**

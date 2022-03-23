@@ -25,8 +25,28 @@ var MultiPlayer = (function () {
         cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'play', [ streamType ]);
     };
 
+    MultiPlayerConstruct.prototype.pause = function (successCallback, failureCallback) {
+        cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'pause', []);
+    };
+
     MultiPlayerConstruct.prototype.stop = function(successCallback, failureCallback) {
         cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'stop', []);
+    };
+
+    MultiPlayerConstruct.prototype.isPlaying = function (successCallback, failureCallback) {
+        cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'isPlaying', []);
+    };
+
+    MultiPlayerConstruct.prototype.getProgress = function (successCallback, failureCallback) {
+        cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'getProgress', []);
+    };
+
+    MultiPlayerConstruct.prototype.getDuration = function (successCallback, failureCallback) {
+        cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'getDuration', []);
+    };
+
+    MultiPlayerConstruct.prototype.seekTo = function (successCallback, failureCallback, position) {
+        cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'seekTo', [ position ]);
     };
 
     return new MultiPlayerConstruct();
