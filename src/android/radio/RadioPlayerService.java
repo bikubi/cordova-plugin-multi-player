@@ -83,6 +83,8 @@ public class RadioPlayerService extends Service {
      */
     private String mRadioUrl;
 
+    private boolean mRadioIsPrepared = false;
+
     /**
      * Auto kill music controls notification on destroy
      */
@@ -237,7 +239,11 @@ public class RadioPlayerService extends Service {
     }
 
     public void setStreamURL(String mRadioUrl) {
+        this.log("setStreamURL " + mRadioUrl);
         this.mRadioUrl = mRadioUrl;
+        if (this.mRadioPlayer != null) {
+            this.preparePlayer();
+        }
     }
 
     public void setAutoKillNotification(boolean mRadioKillNotification) {
@@ -375,6 +381,16 @@ public class RadioPlayerService extends Service {
         }
     }
 
+    private void preparePlayer() {
+        this.log("preparePlayer");
+        DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(this.getApplicationContext(), "CordovaMultiPlayer");
+        ExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
+        Handler mainHandler = new Handler();
+        MediaSource mediaSource = new ExtractorMediaSource(Uri.parse(this.mRadioUrl), dataSourceFactory, extractorsFactory, mainHandler, null);
+        this.mRadioPlayer.prepare(mediaSource);
+        this.mRadioIsPrepared = true;
+    }
+
     /**
      * Return SimpleExoPlayer instance. If it is not initialized, creates and returns.
      *
@@ -389,19 +405,13 @@ public class RadioPlayerService extends Service {
             this.mRadioPlayer = ExoPlayerFactory.newSimpleInstance(this.getApplicationContext(), trackSelector, loadControl);
             this.mRadioPlayer.addListener(this.playerEventListener);
 
-            DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(getApplicationContext(), "CordovaMultiPlayer");
-            ExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
-
-            Handler mainHandler = new Handler();
-            MediaSource mediaSource = new ExtractorMediaSource(Uri.parse(this.mRadioUrl), dataSourceFactory, extractorsFactory, mainHandler, null);
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 this.setPlayerAudioAttributes(changeAudioStreamType);
             } else {
                 this.mRadioPlayer.setAudioStreamType(this.mRadioStreamType);
             }
 
-            this.mRadioPlayer.prepare(mediaSource);
+            this.preparePlayer();
         } else if (changeAudioStreamType) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 this.setPlayerAudioAttributes(changeAudioStreamType);
