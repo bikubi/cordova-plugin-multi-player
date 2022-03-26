@@ -111,7 +111,13 @@ public class RadioManager implements IRadioManager {
 
     @Override
     public void setStreamURL(String streamURL) {
-        this.streamURL = streamURL;
+        if (this.streamURL == null) {
+            this.streamURL = streamURL;
+        } else {
+            this.streamURL = streamURL;
+            log("re-setting streamURL " + this.streamURL);
+            this.mService.setStreamURL(this.streamURL);
+        }
     }
 
     @Override
