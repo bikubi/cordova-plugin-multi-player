@@ -62,13 +62,14 @@ public class RadioPlayerService extends Service {
     private static final String NOTIFICATION_TEXT = "Playing in background";
 
     /**
-     * State enum for Radio Player state (IDLE, PLAYING, STOPPED, INTERRUPTED)
+     * State enum for Radio Player state (IDLE, PLAYING, STOPPED, STOPPED_FOCUS_LOSS, PAUSED)
      */
     public enum State {
         IDLE,
         PLAYING,
         STOPPED,
         STOPPED_FOCUS_LOSS,
+        PAUSED,
     }
 
     List<RadioListener> mListenerList;
@@ -294,7 +295,7 @@ public class RadioPlayerService extends Service {
             return;
         }
 
-        if (this.mRadioState == State.PLAYING || this.mRadioState == State.STOPPED_FOCUS_LOSS) {
+        if (this.mRadioState == State.PLAYING || this.mRadioState == State.STOPPED_FOCUS_LOSS || this.mRadioState == State.PAUSED) {
             this.mRadioPlayer.stop();
         }
     }
@@ -465,6 +466,10 @@ public class RadioPlayerService extends Service {
                 RadioPlayerService.this.log("Player state changed. Playing");
                 RadioPlayerService.this.mRadioState = State.PLAYING;
                 RadioPlayerService.this.notifyRadioStarted();
+            } else if (!playWhenReady && playbackState == ExoPlayer.STATE_READY && RadioPlayerService.this.mRadioState == State.PLAYING) {
+                RadioPlayerService.this.log("Player state changed. Paused");
+                RadioPlayerService.this.mRadioState = State.PAUSED;
+                RadioPlayerService.this.notifyRadioPaused();
             } else if (playbackState == ExoPlayer.STATE_IDLE && RadioPlayerService.this.mRadioState == State.PLAYING) {
                 // Player.STATE_IDLE: This is the initial state, the state when the player is stopped, and when playback failed.
                 RadioPlayerService.this.log("Player state changed. Stopped");
@@ -476,7 +481,7 @@ public class RadioPlayerService extends Service {
                 RadioPlayerService.this.releasePlayer();
                 RadioPlayerService.this.notifyRadioStoppedFocusLoss();
             } else {
-                RadioPlayerService.this.log("Player state changed. ExoPlayer State: " + playbackState + ", Current state: " + RadioPlayerService.this.mRadioState);
+                RadioPlayerService.this.log("Player state changed. ExoPlayer playWhenReady: " + playWhenReady + " playbackState: " + playbackState + ", Current state: " + RadioPlayerService.this.mRadioState);
             }
         }
 
