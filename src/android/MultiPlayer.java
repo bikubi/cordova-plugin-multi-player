@@ -235,6 +235,14 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
     }
 
     @Override
+    public void onRadioMetadata(String metadata) {
+        log("RADIO STATE - METADATA...");
+        // we'll just append this simplistically to the "status code" for now
+        // and handle it on the JS side
+        this.sendListenerResult("METADATA " + metadata);
+    }
+
+    @Override
     public void onError() {
         log("RADIO STATE - ERROR...");
         this.sendListenerResult("ERROR");

@@ -33,6 +33,7 @@ import com.google.android.exoplayer2.trackselection.*;
 import com.google.android.exoplayer2.ui.*;
 import com.google.android.exoplayer2.upstream.*;
 import com.google.android.exoplayer2.util.*;
+import com.google.android.exoplayer2.metadata.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -376,6 +377,12 @@ public class RadioPlayerService extends Service {
         }
     }
 
+    private void notifyRadioMetadata(String metadata) {
+        for (RadioListener mRadioListener : this.mListenerList) {
+            mRadioListener.onRadioMetadata(metadata);
+        }
+    }
+
     private void notifyErrorOccured(){
         for (RadioListener mRadioListener : mListenerList) {
             mRadioListener.onError();
@@ -405,6 +412,18 @@ public class RadioPlayerService extends Service {
 
             this.mRadioPlayer = ExoPlayerFactory.newSimpleInstance(this.getApplicationContext(), trackSelector, loadControl);
             this.mRadioPlayer.addListener(this.playerEventListener);
+            this.mRadioPlayer.addMetadataOutput(new MetadataOutput() {
+                @Override
+                public void onMetadata(Metadata metadata) {
+                    RadioPlayerService.this.log("metadata change");
+                    for (int i = 0; i < metadata.length(); i++) {
+                        Metadata.Entry entry = metadata.get(i);
+                        RadioPlayerService.this.log("metadata " + entry.toString());
+                        // this might be wrapped in garbage, like `ICY: title="foo bar"`, we'll handle this on the JS side
+                        RadioPlayerService.this.notifyRadioMetadata(entry.toString());
+                    }
+                }
+            });
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 this.setPlayerAudioAttributes(changeAudioStreamType);
@@ -508,6 +527,7 @@ public class RadioPlayerService extends Service {
         @Override
         public void onTracksChanged(TrackGroupArray trackGroups, TrackSelectionArray trackSelections) {
         }
+
     };
 
     private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
