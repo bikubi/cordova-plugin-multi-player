@@ -51,7 +51,7 @@ public class RadioPlayerService extends Service {
     public static final int MUSIC_CONTROL_NOTIFICATION = 7824;
 
     // ID for the 'foreground' notification channel
-    public static final String NOTIFICATION_CHANNEL_ID = "cordova-plugin-multi-player-id";
+    public static final String NOTIFICATION_CHANNEL_ID = "cordova-plugin-bikubi";
 
     // ID for the 'foreground' notification
     public static final int NOTIFICATION_ID = 20190517;
