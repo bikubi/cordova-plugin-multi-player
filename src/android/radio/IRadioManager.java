@@ -14,6 +14,7 @@ public interface IRadioManager {
 
     JSONObject getProgress();
     long getDuration();
+    String getDebugInfo();
     long seekTo(long position);
 
     void setListener(RadioListener mRadioListener);

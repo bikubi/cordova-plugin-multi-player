@@ -173,6 +173,11 @@ public class RadioManager implements IRadioManager {
     }
 
     @Override
+    public String getDebugInfo () {
+        return this.mService.debugInfo;
+    }
+
+    @Override
     public JSONObject getProgress() {
         JSONObject ret = new JSONObject();
         try {

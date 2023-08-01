@@ -80,6 +80,8 @@ public class RadioPlayerService extends Service {
      */
     private State mRadioState;
 
+    public String debugInfo = "mp0";
+
     /**
      * Current radio URL
      */
@@ -177,9 +179,11 @@ public class RadioPlayerService extends Service {
         // tries to get the Music Control notification
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             serviceNotification = this.getActiveNotification(MUSIC_CONTROL_NOTIFICATION);
+            this.debugInfo += " mp1";
 
             if (serviceNotification != null) {
                 startWithNotificationID = MUSIC_CONTROL_NOTIFICATION;
+                this.debugInfo += " mp2";
             }
         }
 
@@ -188,6 +192,7 @@ public class RadioPlayerService extends Service {
                 // android 8.1 requires that the notification is assigned to a channel
                 // and it not allows to initialize a hidden notification
                 serviceNotification = this.createNotification();
+                this.debugInfo += " mp3";
             } else {
                 // code based on plugin cordova-plugin-background-mode
                 Notification.Builder notificationBuilder = new Notification.Builder(this.getApplicationContext())
@@ -197,6 +202,7 @@ public class RadioPlayerService extends Service {
                         .setPriority(Notification.PRIORITY_MIN);
 
                 serviceNotification = notificationBuilder.build();
+                this.debugInfo += " mp4";
             }
 
             startWithNotificationID = NOTIFICATION_ID;
@@ -204,6 +210,7 @@ public class RadioPlayerService extends Service {
 
         if (serviceNotification != null) {
             this.startForeground(startWithNotificationID, serviceNotification);
+            this.debugInfo += " mp5";
         }
 
         PowerManager powerMgr = (PowerManager) this.getSystemService(POWER_SERVICE);

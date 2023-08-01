@@ -45,6 +45,10 @@ var MultiPlayer = (function () {
     //     cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'getDuration', []);
     // };
 
+    MultiPlayerConstruct.prototype.getDebugInfo = function (successCallback, failureCallback) {
+        cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'getDebugInfo', []);
+    };
+
     MultiPlayerConstruct.prototype.seekTo = function (successCallback, failureCallback, position) {
         cordova.exec(successCallback, failureCallback, 'MultiPlayer', 'seekTo', [ position ]);
     };
