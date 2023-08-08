@@ -51,7 +51,7 @@ public class RadioPlayerService extends Service {
     public static final int MUSIC_CONTROL_NOTIFICATION = 7824;
 
     // ID for the 'foreground' notification channel
-    public static final String NOTIFICATION_CHANNEL_ID = "cordova-plugin-bikubi";
+    public static final String NOTIFICATION_CHANNEL_ID = "cordova-plugin-multi-player";
 
     // ID for the 'foreground' notification
     public static final int NOTIFICATION_ID = 20190517;
@@ -572,8 +572,8 @@ public class RadioPlayerService extends Service {
     private Notification createNotification() {
         NotificationManager notificationManager = (NotificationManager) this.getSystemService(Context.NOTIFICATION_SERVICE);
 
-        CharSequence name = "cordova-plugin-multi-player";
-        String description = "cordova-plugin-multi-player notification";
+        CharSequence name = "Audio Controls (Multi Player)";
+        String description = "Notification for Multi Player";
         int importance = NotificationManager.IMPORTANCE_LOW;
 
         NotificationChannel notificationChannel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance);
