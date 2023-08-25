@@ -24,13 +24,18 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
             try {
                 if (this.mRadioManager == null) {
                     this.mRadioManager = RadioManager.with(this.cordova.getActivity(), this);
+                    if (this.mRadioManager == null) {
+                        log("initialize, attempting setStreamURL, but mRadioManager still null");
+                    }
                     this.mRadioManager.setStreamURL(args.getString(0));
                     this.mRadioManager.setAutoKillNotification(args.getBoolean(1));
-
-                    this.connectionCallbackContext = callbackContext;
                 } else {
                     log("already initialized, setting stream url " + args.getString(0));
                     this.mRadioManager.setStreamURL(args.getString(0));
+                }
+                this.connectionCallbackContext = callbackContext;
+                if (callbackContext == null) {
+                    log("initialize, but context is null");
                 }
 
                 PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
@@ -267,6 +272,8 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
 
             pluginResult.setKeepCallback(true);
             this.connectionCallbackContext.sendPluginResult(pluginResult);
+        } else {
+            log("sendListenerResult, but context is null");
         }
     }
 

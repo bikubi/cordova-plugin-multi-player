@@ -116,7 +116,11 @@ public class RadioManager implements IRadioManager {
         } else {
             this.streamURL = streamURL;
             log("re-setting streamURL " + this.streamURL);
-            this.mService.setStreamURL(this.streamURL);
+            if (this.mService != null) {
+                this.mService.setStreamURL(this.streamURL);
+            } else {
+                log("re-setting streamURL, skipped setting on service, because still null");
+            }
         }
     }
 
