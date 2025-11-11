@@ -9,5 +9,7 @@ public interface RadioListener {
     void onRadioPaused();
     void onRadioStoppedFocusLoss();
     void onRadioMetadata(String metadata);
+    void onRadioStoppedFocusTransient();
+    void onRadioStartedFocusTransient();
     void onError();
 }

@@ -17,168 +17,267 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
     private JSONArray requestedPlay = null;
 
     @Override
-    public synchronized boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
+    public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
         log("ACTION - " + action);
 
         if ("initialize".equals(action)) {
-            try {
-                if (this.mRadioManager == null) {
-                    this.mRadioManager = RadioManager.with(this.cordova.getActivity(), this);
+            synchronized (this) {
+                try {
                     if (this.mRadioManager == null) {
-                        log("initialize, attempting setStreamURL, but mRadioManager still null");
+                        log("initialize, mRadioManager null");
+                        this.mRadioManager = RadioManager.with(this.cordova.getActivity(), this);
+                        if (this.mRadioManager == null) {
+                            log("initialize, attempting setStreamURL, but mRadioManager still null");
+                        }
+                        this.mRadioManager.setStreamURL(args.getString(0));
+                        this.mRadioManager.setAutoKillNotification(args.getBoolean(1));
+                    } else {
+                        log("already initialized, setting stream url " + args.getString(0));
+                        this.mRadioManager.setStreamURL(args.getString(0));
                     }
-                    this.mRadioManager.setStreamURL(args.getString(0));
-                    this.mRadioManager.setAutoKillNotification(args.getBoolean(1));
-                } else {
-                    log("already initialized, setting stream url " + args.getString(0));
-                    this.mRadioManager.setStreamURL(args.getString(0));
-                }
-                this.connectionCallbackContext = callbackContext;
-                if (callbackContext == null) {
-                    log("initialize, but context is null");
-                }
+                    this.connectionCallbackContext = callbackContext;
+                    if (callbackContext == null) {
+                        log("initialize, but context is null");
+                    }
 
-                PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
-                pluginResult.setKeepCallback(true);
+                    PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
+                    pluginResult.setKeepCallback(true);
 
-                callbackContext.sendPluginResult(pluginResult);
-            } catch (Exception e) {
-                log("Exception occurred during initialize: ".concat(e.getMessage()));
-                callbackContext.error(e.getMessage());
+                    callbackContext.sendPluginResult(pluginResult);
+                } catch (Exception e) {
+                    log("Exception occurred during initialize: ".concat(e.getMessage()));
+                    callbackContext.error(e.getMessage());
+                }
             }
         } else if ("connect".equals(action)) {
-            if (!this.isConnected && !this.isConnecting) {
-                this.isConnecting = true;
+            // cordova.getActivity().runOnUiThread(new Runnable() {
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (!isConnected && !isConnecting) {
+                            isConnecting = true;
 
-                try {
-                    this.mRadioManager.connect();
-                } catch (Exception e) {
-                    log("Exception occurred during connect: ".concat(e.getMessage()));
-                    this.isConnecting = false;
-                    callbackContext.error(e.getMessage());
-                    return true;
-                }
-            }
+                            try {
+                                mRadioManager.connect();
+                            } catch (Exception e) {
+                                log("Exception occurred during connect: ".concat(e.getMessage()));
+                                isConnecting = false;
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        }
 
-            callbackContext.success();
-        } else if ("disconnect".equals(action)) {
-            this.requestedPlay = null;
-            boolean canDisconnect = this.isConnecting || this.isConnected;
-
-            if (canDisconnect) {
-                try {
-                    this.isConnecting = false;
-                    this.isConnected = false;
-                    this.mRadioManager.disconnect();
-                } catch (Exception e) {
-                    log("Exception occurred during disconnect: ".concat(e.getMessage()));
-                    callbackContext.error(e.getMessage());
-                    return true;
-                }
-            }
-
-            callbackContext.success();
-
-            if (canDisconnect) {
-                log("RADIO STATE - DISCONNECTED...");
-                this.sendListenerResult("DISCONNECTED");
-            }
-        } else if ("play".equals(action)) {
-            if (!this.isConnected) {
-                this.requestedPlay = args;
-
-                if (!this.isConnecting) {
-                    this.isConnecting = true;
-
-                    try {
-                        this.mRadioManager.connect();
-                    } catch (Exception e) {
-                        log("Exception occurred during play auto connect: ".concat(e.getMessage()));
-                        this.isConnecting = false;
-                        this.requestedPlay = null;
-                        callbackContext.error(e.getMessage());
-                        return true;
+                        callbackContext.success();
                     }
                 }
-            } else {
-                this.requestedPlay = null;
+            });
 
-                try {
-                    this.mRadioManager.startRadio(args.getInt(0));
-                } catch (Exception e) {
-                    log("Exception occurred during play: ".concat(e.getMessage()));
-                    callbackContext.error(e.getMessage());
-                    return true;
+            return true;
+        } else if ("disconnect".equals(action)) {
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        requestedPlay = null;
+                        boolean canDisconnect = isConnecting || isConnected;
+
+                        if (canDisconnect) {
+                            try {
+                                isConnecting = false;
+                                isConnected = false;
+                                mRadioManager.disconnect();
+                            } catch (Exception e) {
+                                log("Exception occurred during disconnect: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        }
+
+                        callbackContext.success();
+
+                        if (canDisconnect) {
+                            log("RADIO STATE - DISCONNECTED...");
+                            sendListenerResult("DISCONNECTED");
+                        }
+                    }
                 }
-            }
+            });
 
-            callbackContext.success();
+            return true;
+        } else if ("play".equals(action)) {
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (!isConnected) {
+                            requestedPlay = args;
+
+                            if (!isConnecting) {
+                                isConnecting = true;
+
+                                try {
+                                    mRadioManager.connect();
+                                } catch (Exception e) {
+                                    log("Exception occurred during play auto connect: ".concat(e.getMessage()));
+                                    isConnecting = false;
+                                    requestedPlay = null;
+                                    callbackContext.error(e.getMessage());
+                                    return;
+                                }
+                            }
+                        } else {
+                            requestedPlay = null;
+
+                            try {
+                                mRadioManager.startRadio(args.getInt(0));
+                            } catch (Exception e) {
+                                log("Exception occurred during play: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        }
+
+                        callbackContext.success();
+                    }
+                }
+            });
+
+            return true;
         } else if ("stop".equals(action)) {
-            this.requestedPlay = null;
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        requestedPlay = null;
 
-            if (this.isConnected) {
-                try {
-                    this.mRadioManager.stopRadio();
-                } catch (Exception e) {
-                    log("Exception occurred during stop: ".concat(e.getMessage()));
-                    callbackContext.error(e.getMessage());
-                    return true;
+                        if (isConnected) {
+                            try {
+                                mRadioManager.stopRadio();
+                            } catch (Exception e) {
+                                log("Exception occurred during stop: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        }
+                        callbackContext.success();
+                    }
                 }
-            }
+            });
 
-            callbackContext.success();
+            return true;
         } else if ("pause".equals(action)) {
-            this.requestedPlay = null;
-
-            if (this.isConnected) {
-                try {
-                    this.mRadioManager.pauseRadio();
-                } catch (Exception e) {
-                    log("Exception occurred during pause: ".concat(e.getMessage()));
-                    callbackContext.error(e.getMessage());
-                    return true;
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        requestedPlay = null; // or args?
+                        if (isConnected) {
+                            try {
+                                mRadioManager.pauseRadio();
+                            } catch (Exception e) {
+                                log("Exception occurred during pause: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        }
+                        callbackContext.success();
+                    }
                 }
-            }
-
-            callbackContext.success();
+            });
+            return true;
         } else if ("isPlaying".equals(action)) {
-            if (this.isConnected) {
-                callbackContext.success(this.mRadioManager.isPlaying() ? 1 : 0);
-            } else {
-                callbackContext.error("not connected");
-            }
-        } else if ("getProgress".equals(action)) {
-            if (this.isConnected) {
-                // callbackContext.success((int) this.mRadioManager.getProgress());
-                callbackContext.success(this.mRadioManager.getProgress());
-            } else {
-                callbackContext.error("not connected");
-            }
-        } else if ("seekTo".equals(action)) {
-            if (this.isConnected) {
-                long position = args.getLong(0);
-                try {
-                    this.mRadioManager.seekTo(position);
-                    callbackContext.success();
-                } catch (Exception e) {
-                    log("Exception occurred during seekTo: ".concat(e.getMessage()));
-                    callbackContext.error(e.getMessage());
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (isConnected) {
+                            try {
+                                callbackContext.success(mRadioManager.isPlaying() ? 1 : 0);
+                            } catch (Exception e) {
+                                log("Exception occurred during isPlaying: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        } else {
+                            callbackContext.error("not connected");
+                        }
+                    }
                 }
-            } else {
-                callbackContext.error("not connected");
-            }
+            });
+            return true;
+        } else if ("getProgress".equals(action)) {
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (isConnected) {
+                            try {
+                                callbackContext.success(mRadioManager.getProgress());
+                            } catch (Exception e) {
+                                log("Exception occurred during getProgress: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        } else {
+                            callbackContext.error("not connected");
+                        }
+                    }
+                }
+            });
+            return true;
+        } else if ("seekTo".equals(action)) {
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (isConnected) {
+                            long position = args.getLong(0);
+                            try {
+                                mRadioManager.seekTo(position);
+                                callbackContext.success();
+                            } catch (Exception e) {
+                                log("Exception occurred during seekTo: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        } else {
+                            callbackContext.error("not connected");
+                        }
+                    }
+                }
+            });
+            return true;
         } else if ("getDuration".equals(action)) {
-            if (this.isConnected) {
-                callbackContext.success((int) this.mRadioManager.getDuration());
-            } else {
-                callbackContext.error("not connected");
-            }
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (isConnected) {
+                            try {
+                                callbackContext.success(mRadioManager.getDuration());
+                            } catch (Exception e) {
+                                log("Exception occurred during getDuration: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        } else {
+                            callbackContext.error("not connected");
+                        }
+                    }
+                }
+            });
+            return true;
         } else if ("getDebugInfo".equals(action)) {
-            if (this.isConnected) {
-                callbackContext.success(this.mRadioManager.getDebugInfo());
-            } else {
-                callbackContext.error("not connected");
-            }
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    synchronized (MultiPlayer.this) {
+                        if (isConnected) {
+                            try {
+                                callbackContext.success(mRadioManager.getDebugInfo());
+                            } catch (Exception e) {
+                                log("Exception occurred during getDuration: ".concat(e.getMessage()));
+                                callbackContext.error(e.getMessage());
+                                return;
+                            }
+                        } else {
+                            callbackContext.error("not connected");
+                        }
+                    }
+                }
+            });
+            return true;
         } else {
             log("Called invalid action: " + action);
             return false;
@@ -237,6 +336,18 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
     public void onRadioPaused() {
         log("RADIO STATE - PAUSED...");
         this.sendListenerResult("PAUSED");
+    }
+
+    @Override
+    public void onRadioStoppedFocusTransient() {
+        log("RADIO STATE - STOPPED FOCUS TRANSIENT...");
+        this.sendListenerResult("STOPPED_FOCUS_TRANSIENT");
+    }
+
+    @Override
+    public void onRadioStartedFocusTransient() {
+        log("RADIO STATE - STARTED FOCUS TRANSIENT...");
+        this.sendListenerResult("STARTED_FOCUS_TRANSIENT");
     }
 
     @Override

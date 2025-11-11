@@ -7,12 +7,46 @@ var MultiPlayerProxy = (function () {
     var audioEl;
     var sourceEl;
     var streamUrl;
+    var stallTimeout;
     var sendListenerResult = noop;
 
     var isConnected = false;
     var isPlaying = false;
     var requestedInitPlaying = false;
     var requestedPlay = false;
+    var curStallTimeout = null;
+
+    function clearStallTimeout() {
+        if (curStallTimeout) {
+            clearTimeout(curStallTimeout);
+            curStallTimeout = null;
+        }
+    }
+
+    function unloadPlayer() {
+        isPlaying = false;
+        requestedInitPlaying = false;
+        requestedPlay = false;
+
+        // set a blank audio to force stop loading from streaming
+        sourceEl.src = blankAudio;
+        audioEl.load();
+        audioEl.loop = true;
+
+        var playPromise = audioEl.play();
+
+        if (playPromise) {
+            playPromise.then(function () {
+                audioEl.pause();
+            }).catch(function (e) {
+                audioEl.pause();
+            })
+        } else {
+            setTimeout(function () {
+                audioEl.pause();
+            });
+        }
+    }
 
     function sendErrorNotInitialized(failureCallback) {
         if (streamUrl) {
@@ -24,14 +58,19 @@ var MultiPlayerProxy = (function () {
     }
 
     function errorListener() {
+        clearStallTimeout();
+
         if (!sourceEl.src || sourceEl.src == blankAudio) {
             return;
         }
 
+        unloadPlayer();
         sendListenerResult('ERROR');
     }
 
     function loadingListener() {
+        clearStallTimeout();
+
         if (!sourceEl.src || sourceEl.src == blankAudio) {
             return;
         }
@@ -40,6 +79,12 @@ var MultiPlayerProxy = (function () {
     }
 
     function playingListener() {
+        clearStallTimeout();
+
+        if (!sourceEl.src || sourceEl.src == blankAudio) {
+            return;
+        }
+
         isPlaying = true;
         requestedInitPlaying = false;
         requestedPlay = false;
@@ -48,18 +93,19 @@ var MultiPlayerProxy = (function () {
     }
 
     function pausedListener() {
-        isPlaying = false;
-        requestedInitPlaying = false;
+        clearStallTimeout();
 
-        // set a blank audio to force stop loading from streaming
-        sourceEl.src = blankAudio;
-        audioEl.load();
+        if (!sourceEl.src || sourceEl.src == blankAudio) {
+            return;
+        }
 
+        unloadPlayer();
         sendListenerResult('STOPPED');
     }
 
-    function initialize(successCallback, failureCallback, url) {
-        streamUrl = url;
+    function initialize(successCallback, failureCallback, params) {
+        streamUrl = params[0];
+        stallTimeout = params[2];
         audioEl = window.document.createElement('audio');
         sourceEl = window.document.createElement('source');
         audioEl.appendChild(sourceEl);
@@ -82,6 +128,16 @@ var MultiPlayerProxy = (function () {
         audioEl.addEventListener('playing', playingListener);
         audioEl.addEventListener('pause', pausedListener);
         audioEl.addEventListener('loadstart', loadingListener);
+
+        audioEl.addEventListener('stalled', function () {
+            if (!stallTimeout) {
+                return;
+            }
+
+            clearStallTimeout();
+
+            curStallTimeout = setTimeout(errorListener, stallTimeout);
+        });
 
         isConnected = true;
 
@@ -135,14 +191,12 @@ var MultiPlayerProxy = (function () {
 
         sourceEl.src = streamUrl;
         audioEl.load();
+        audioEl.loop = false;
 
         var playPromise = audioEl.play();
 
         if (playPromise) {
-            playPromise.catch(function () {
-                requestedInitPlaying = false;
-                errorListener();
-            });
+            playPromise.catch(errorListener);
         }
 
         successCallback && successCallback();
@@ -159,8 +213,6 @@ var MultiPlayerProxy = (function () {
         }
 
         audioEl.pause();
-        requestedPlay = false;
-
         successCallback && successCallback();
     };
 

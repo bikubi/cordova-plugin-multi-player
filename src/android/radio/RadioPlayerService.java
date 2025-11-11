@@ -7,11 +7,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
@@ -19,21 +17,26 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.service.notification.StatusBarNotification;
-import androidx.annotation.RequiresApi;
 import android.util.Log;
-import android.widget.RemoteViews;
 
-import com.google.android.exoplayer2.*;
-import com.google.android.exoplayer2.extractor.*;
-import com.google.android.exoplayer2.source.*;
-import com.google.android.exoplayer2.source.dash.*;
-import com.google.android.exoplayer2.source.hls.*;
-import com.google.android.exoplayer2.source.smoothstreaming.*;
-import com.google.android.exoplayer2.trackselection.*;
-import com.google.android.exoplayer2.ui.*;
-import com.google.android.exoplayer2.upstream.*;
-import com.google.android.exoplayer2.util.*;
-import com.google.android.exoplayer2.metadata.*;
+import androidx.annotation.RequiresApi;
+
+import android.media.AudioManager;
+import android.media.AudioFocusRequest;
+// import android.media.AudioAttributes;
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.PlaybackParameters;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.extractor.ExtractorsFactory;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.extractor.metadata.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,11 +44,8 @@ import java.util.List;
 public class RadioPlayerService extends Service {
     private static final String LOG_TAG = "MultiPlayer";
 
-    /**
-     * Radio buffer and decode capacity(DEFAULT VALUES)
-     */
-    private final int AUDIO_BUFFER_CAPACITY_MS = 800;
-    private final int AUDIO_DECODE_CAPACITY_MS = 400;
+    private final int LIVE_TARGET_OFFSET_MS = 5000;
+    private final float LIVE_MAX_PLAYBACK_SPEED = 1.02f;
 
     // Music Control plugin notification id
     public static final int MUSIC_CONTROL_NOTIFICATION = 7824;
@@ -69,6 +69,7 @@ public class RadioPlayerService extends Service {
         IDLE,
         PLAYING,
         STOPPED,
+        STOPPED_FOCUS_TRANSIENT,
         STOPPED_FOCUS_LOSS,
         PAUSED,
     }
@@ -100,9 +101,9 @@ public class RadioPlayerService extends Service {
     private int mRadioStreamType = AudioManager.STREAM_MUSIC;
 
     /**
-     * SimpleExoPlayer
+     * ExoPlayer
      */
-    private SimpleExoPlayer mRadioPlayer = null;
+    private ExoPlayer mRadioPlayer = null;
 
     /**
      * Binder
@@ -127,12 +128,7 @@ public class RadioPlayerService extends Service {
     /**
      * AudioAttributes
      */
-    private AudioAttributes mAudioAttributes;
-
-    /**
-     * com.google.android.exoplayer2.audio.AudioAttributes
-     */
-    private com.google.android.exoplayer2.audio.AudioAttributes mPlayerAudioAttributes;
+    private android.media.AudioAttributes mAudioAttributes;
 
     private Notification serviceNotification = null;
     private int startWithNotificationID = 0;
@@ -209,7 +205,11 @@ public class RadioPlayerService extends Service {
         }
 
         if (serviceNotification != null) {
-            this.startForeground(startWithNotificationID, serviceNotification);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                this.startForeground(startWithNotificationID, serviceNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+            } else {
+                this.startForeground(startWithNotificationID, serviceNotification);
+            }
             this.debugInfo += " mp5";
         }
 
@@ -237,7 +237,11 @@ public class RadioPlayerService extends Service {
             notificationManager.cancel(this.startWithNotificationID);
         }
 
-        this.releasePlayer();
+        RadioManager.getRequestHandler().post(new Runnable() {
+            public void run() {
+                RadioPlayerService.this.releasePlayer();
+            }
+        });
 
         if (this.wakeLock != null) {
             this.wakeLock.release();
@@ -282,7 +286,7 @@ public class RadioPlayerService extends Service {
         }
 
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            SimpleExoPlayer player = RadioPlayerService.this.getPlayer(changeAudioStreamType);
+            ExoPlayer player = this.getPlayer(changeAudioStreamType);
             player.setVolume(1f);
             player.setPlayWhenReady(true);
         } else {
@@ -297,15 +301,36 @@ public class RadioPlayerService extends Service {
         this.play(-1);
     }
 
-    public void stop() {
+    public void stop(boolean forceStop) {
         if (this.mRadioPlayer == null) {
             this.notifyRadioStopped();
             return;
         }
 
-        if (this.mRadioState == State.PLAYING || this.mRadioState == State.STOPPED_FOCUS_LOSS || this.mRadioState == State.PAUSED) {
+        if (
+            this.mRadioState == State.PLAYING
+            || this.mRadioState == State.STOPPED_FOCUS_TRANSIENT
+            || this.mRadioState == State.STOPPED_FOCUS_LOSS
+        ) {
+            // if force to stop, try to stop despite not being as playing
+            if (forceStop && this.mRadioState != State.PLAYING) {
+                // if already on iddle, stop wont trigger the change state, only release the player and notify
+                if (this.mRadioPlayer.getPlaybackState() == ExoPlayer.STATE_IDLE) {
+                    this.log("Player state changed. Stopped - already on focus loss");
+                    this.releasePlayer();
+                    this.notifyRadioStopped();
+                    return;
+                }
+
+                this.mRadioState = State.PLAYING;
+            }
+
             this.mRadioPlayer.stop();
         }
+    }
+
+    public void stop() {
+        this.stop(false);
     }
 
     public void pause() {
@@ -378,6 +403,18 @@ public class RadioPlayerService extends Service {
         }
     }
 
+    private void notifyRadioStoppedFocusTransient() {
+        for (RadioListener mRadioListener : mListenerList) {
+            mRadioListener.onRadioStoppedFocusTransient();
+        }
+    }
+
+    private void notifyRadioStartedFocusTransient() {
+        for (RadioListener mRadioListener : mListenerList) {
+            mRadioListener.onRadioStartedFocusTransient();
+        }
+    }
+
     private void notifyRadioStoppedFocusLoss() {
         for (RadioListener mRadioListener : mListenerList) {
             mRadioListener.onRadioStoppedFocusLoss();
@@ -407,50 +444,71 @@ public class RadioPlayerService extends Service {
     }
 
     /**
-     * Return SimpleExoPlayer instance. If it is not initialized, creates and returns.
+     * Return ExoPlayer instance. If it is not initialized, creates and returns.
      *
-     * @return SimpleExoPlayer
+     * @return ExoPlayer
      */
-    private SimpleExoPlayer getPlayer(boolean changeAudioStreamType) {
+    private ExoPlayer getPlayer(boolean changeAudioStreamType) {
         if (this.mRadioPlayer == null) {
-            DefaultBandwidthMeter bandwidthMeter = new DefaultBandwidthMeter();
-            TrackSelector trackSelector = new DefaultTrackSelector();
-            LoadControl loadControl = new DefaultLoadControl();
+            int audioUsageType = this.mRadioStreamType == AudioManager.STREAM_ALARM
+                ? C.USAGE_ALARM
+                : C.USAGE_MEDIA;
 
-            this.mRadioPlayer = ExoPlayerFactory.newSimpleInstance(this.getApplicationContext(), trackSelector, loadControl);
+            DataSource.Factory dataSourceFactory = new DefaultDataSource.Factory(
+                this.getApplicationContext(),
+                new DefaultHttpDataSource.Factory()
+                    .setUserAgent("CordovaMultiPlayer")
+            );
+
+            ExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
+
+            this.mRadioPlayer = new ExoPlayer.Builder(this.getApplicationContext())
+                .setLooper(RadioManager.getRequestHandler().getLooper())
+                .setMediaSourceFactory(
+                    new DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+                        .setLiveTargetOffsetMs(LIVE_TARGET_OFFSET_MS)
+                )
+                .setAudioAttributes(
+                    new AudioAttributes.Builder()
+                        .setUsage(audioUsageType)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .build(),
+                    false
+                )
+                .build();
+
+            // Per MediaItem settings.
+            MediaItem mediaItem = new MediaItem.Builder()
+                .setUri(Uri.parse(this.mRadioUrl))
+                .setLiveConfiguration(
+                    new MediaItem.LiveConfiguration.Builder()
+                        .setMaxPlaybackSpeed(LIVE_MAX_PLAYBACK_SPEED)
+                        .build()
+                )
+                .build();
+
+            this.mRadioPlayer.setMediaItem(mediaItem);
             this.mRadioPlayer.addListener(this.playerEventListener);
-            this.mRadioPlayer.addMetadataOutput(new MetadataOutput() {
-                @Override
-                public void onMetadata(Metadata metadata) {
-                    RadioPlayerService.this.log("metadata change");
-                    for (int i = 0; i < metadata.length(); i++) {
-                        Metadata.Entry entry = metadata.get(i);
-                        RadioPlayerService.this.log("metadata " + entry.toString());
-                        // this might be wrapped in garbage, like `ICY: title="foo bar"`, we'll handle this on the JS side
-                        RadioPlayerService.this.notifyRadioMetadata(entry.toString());
-                    }
-                }
-            });
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                this.setPlayerAudioAttributes(changeAudioStreamType);
-            } else {
-                this.mRadioPlayer.setAudioStreamType(this.mRadioStreamType);
-            }
-
-            this.preparePlayer();
+            this.mRadioPlayer.prepare();
+            // this.preparePlayer();
         } else if (changeAudioStreamType) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                this.setPlayerAudioAttributes(changeAudioStreamType);
-            } else {
-                this.mRadioPlayer.setAudioStreamType(this.mRadioStreamType);
-            }
+            int audioUsageType = this.mRadioStreamType == AudioManager.STREAM_ALARM
+                ? C.USAGE_ALARM
+                : C.USAGE_MEDIA;
+
+            this.mRadioPlayer.setAudioAttributes(
+                new AudioAttributes.Builder()
+                    .setUsage(audioUsageType)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                false
+            );
         }
 
         return this.mRadioPlayer;
     }
 
-    private SimpleExoPlayer getPlayer() {
+    private ExoPlayer getPlayer() {
         return this.getPlayer(false);
     }
 
@@ -468,89 +526,160 @@ public class RadioPlayerService extends Service {
         }
     }
 
-    private ExoPlayer.EventListener playerEventListener = new ExoPlayer.EventListener() {
-        @Override
-        public void onLoadingChanged(boolean isLoading) {
-        }
-
+    private ExoPlayer.Listener playerEventListener = new ExoPlayer.Listener() {
         @Override
         public void onPlaybackParametersChanged(PlaybackParameters playbackParameters) {
             RadioPlayerService.this.log("Playback parameters changed");
         }
 
         @Override
-        public void onPlayerError(ExoPlaybackException error) {
-            RadioPlayerService.this.releasePlayer();
-            RadioPlayerService.this.notifyErrorOccured();
-            RadioPlayerService.this.log("ERROR OCCURED.");
+        public void onPlayerError(PlaybackException error) {
+            if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                RadioPlayerService.this.log("FELL BEHIND, RE-INITIALIZING AT THE LIVE EDGE..");
+
+                RadioManager.getRequestHandler().post(new Runnable() {
+                    public void run() {
+                        ExoPlayer player = RadioPlayerService.this.getPlayer();
+
+                        player.seekToDefaultPosition();
+                        player.prepare();
+                    }
+                });
+            } else {
+                RadioPlayerService.this.log("ERROR OCCURED.");
+
+                RadioManager.getRequestHandler().post(new Runnable() {
+                    public void run() {
+                        RadioPlayerService.this.releasePlayer();
+                        RadioPlayerService.this.notifyErrorOccured();
+                    }
+                });
+            }
         }
 
         @Override
-        public void onPlayerStateChanged(boolean playWhenReady, int playbackState) {
-            if (playWhenReady && playbackState == ExoPlayer.STATE_READY && RadioPlayerService.this.mRadioState != State.PLAYING) {
-                // The player is only playing if the state is Player.STATE_READY and playWhenReady=true
-                RadioPlayerService.this.log("Player state changed. Playing");
-                RadioPlayerService.this.mRadioState = State.PLAYING;
-                RadioPlayerService.this.notifyRadioStarted();
-            } else if (!playWhenReady && playbackState == ExoPlayer.STATE_READY && RadioPlayerService.this.mRadioState == State.PLAYING) {
-                RadioPlayerService.this.log("Player state changed. Paused");
-                RadioPlayerService.this.mRadioState = State.PAUSED;
-                RadioPlayerService.this.notifyRadioPaused();
-            } else if (playbackState == ExoPlayer.STATE_IDLE && RadioPlayerService.this.mRadioState == State.PLAYING) {
+        public void onPlaybackStateChanged(int playbackState) {
+            if (
+                // playbackState == ExoPlayer.STATE_IDLE
+                // &&
+                RadioPlayerService.this.mRadioState == State.PAUSED
+            ) {
+                RadioPlayerService.this.log("Player state changed. Paused= playbackState " + playbackState + " playWhenReady " + playWhenReady);
+                RadioManager.getRequestHandler().post(new Runnable() {
+                    public void run() {
+                        RadioPlayerService.this.releasePlayer();
+                        RadioPlayerService.this.notifyRadioPaused();
+                    }
+                });
+
+            } else if (
+                playbackState == ExoPlayer.STATE_IDLE
+                && RadioPlayerService.this.mRadioState == State.PLAYING
+            ) {
                 // Player.STATE_IDLE: This is the initial state, the state when the player is stopped, and when playback failed.
                 RadioPlayerService.this.log("Player state changed. Stopped");
-                RadioPlayerService.this.releasePlayer();
-                RadioPlayerService.this.notifyRadioStopped();
-            } else if (playbackState == ExoPlayer.STATE_IDLE && RadioPlayerService.this.mRadioState == State.STOPPED_FOCUS_LOSS) {
+
+                RadioManager.getRequestHandler().post(new Runnable() {
+                    public void run() {
+                        RadioPlayerService.this.releasePlayer();
+                        RadioPlayerService.this.notifyRadioStopped();
+                    }
+                });
+            } else if (
+                playbackState == ExoPlayer.STATE_IDLE
+                && RadioPlayerService.this.mRadioState == State.STOPPED_FOCUS_TRANSIENT
+            ) {
+                // focus loss temporarily, notify
+                RadioPlayerService.this.log("Player state changed. Stopped focus loss transient");
+                RadioPlayerService.this.notifyRadioStoppedFocusTransient();
+            } else if (
+                playbackState == ExoPlayer.STATE_IDLE
+                && RadioPlayerService.this.mRadioState == State.STOPPED_FOCUS_LOSS
+            ) {
                 // focus loss, notify and set state to STOPPED
                 RadioPlayerService.this.log("Player state changed. Stopped focus loss");
-                RadioPlayerService.this.releasePlayer();
-                RadioPlayerService.this.notifyRadioStoppedFocusLoss();
+
+                RadioManager.getRequestHandler().post(new Runnable() {
+                    public void run() {
+                        RadioPlayerService.this.releasePlayer();
+                        RadioPlayerService.this.notifyRadioStoppedFocusLoss();
+                    }
+                });
+            } else if (
+                playbackState == ExoPlayer.STATE_READY
+                && RadioPlayerService.this.mRadioState == State.STOPPED_FOCUS_TRANSIENT
+            ) {
+                // focus regained after an transient loss
+                RadioPlayerService.this.log("Player state changed. Playing - regained focus transient");
+                RadioPlayerService.this.mRadioState = State.PLAYING;
+                RadioPlayerService.this.notifyRadioStartedFocusTransient();
             } else {
                 RadioPlayerService.this.log("Player state changed. ExoPlayer playWhenReady: " + playWhenReady + " playbackState: " + playbackState + ", Current state: " + RadioPlayerService.this.mRadioState);
             }
         }
 
         @Override
-        public void onPositionDiscontinuity(int reason) {
+        public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+            if (
+                playWhenReady
+                && reason == ExoPlayer.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+            ) {
+                if (RadioPlayerService.this.mRadioState == State.STOPPED_FOCUS_TRANSIENT) {
+                    RadioPlayerService.this.log("Player state changed when ready. Playing - regained focus transient");
+                    RadioPlayerService.this.mRadioState = State.PLAYING;
+                    RadioPlayerService.this.notifyRadioStartedFocusTransient();
+                } else if (RadioPlayerService.this.mRadioState != State.PLAYING) {
+                    // The player is only playing if the state is Player.STATE_READY and playWhenReady=true
+                    RadioPlayerService.this.log("Player state changed when ready. Playing");
+                    RadioPlayerService.this.mRadioState = State.PLAYING;
+                    RadioPlayerService.this.notifyRadioStarted();
+                }
+            }
         }
 
-        @Override
-        public void onRepeatModeChanged(int newRepeatMode) {
-        }
-
-        @Override
-        public void onSeekProcessed() {
-        }
-
-        @Override
-        public void onShuffleModeEnabledChanged(boolean shuffleModeEnabled) {
-        }
-
-        // @Override
-        // public void onTimelineChanged(Timeline timeline, Object manifest) {
-        // }
-
-        @Override
-        public void onTracksChanged(TrackGroupArray trackGroups, TrackSelectionArray trackSelections) {
+        @override
+        public void onMediaMetaDataChanged() {
         }
 
     };
 
     private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
         public void onAudioFocusChange(int focusChange) {
-            if (RadioPlayerService.this.mRadioPlayer == null || RadioPlayerService.this.mRadioState != State.PLAYING) {
+            if (
+                RadioPlayerService.this.mRadioPlayer == null
+                || (
+                    RadioPlayerService.this.mRadioState != State.PLAYING
+                    && RadioPlayerService.this.mRadioState != State.STOPPED_FOCUS_TRANSIENT
+                )
+            ) {
                 return;
             }
 
-            if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-                RadioPlayerService.this.mRadioPlayer.setVolume(0.2f);
-            } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-                RadioPlayerService.this.mRadioPlayer.setVolume(1f);
-            } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                RadioPlayerService.this.mRadioState = State.STOPPED_FOCUS_LOSS;
-                RadioPlayerService.this.stop();
-            }
+            RadioManager.getRequestHandler().post(new Runnable() {
+                public void run() {
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                        RadioPlayerService.this.log("Player focus changed. LOSS_TRANSIENT_CAN_DUCK");
+                        RadioPlayerService.this.mRadioPlayer.setVolume(0.2f);
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        RadioPlayerService.this.log("Player focus changed. GAIN");
+                        RadioPlayerService.this.mRadioPlayer.setVolume(1f);
+
+                        if (RadioPlayerService.this.mRadioState == State.STOPPED_FOCUS_TRANSIENT) {
+                            RadioPlayerService.this.log(" - was stopped transient");
+                            RadioPlayerService.this.mRadioPlayer.prepare();
+                            RadioPlayerService.this.mRadioPlayer.setPlayWhenReady(true);
+                        }
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        RadioPlayerService.this.log("Player focus changed. LOSS_TRANSIENT");
+                        RadioPlayerService.this.mRadioState = State.STOPPED_FOCUS_TRANSIENT;
+                        RadioPlayerService.this.stop();
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                        RadioPlayerService.this.log("Player focus changed. LOSS");
+                        RadioPlayerService.this.mRadioState = State.STOPPED_FOCUS_LOSS;
+                        RadioPlayerService.this.stop();
+                    }
+                }
+            });
         }
     };
 
@@ -582,11 +711,11 @@ public class RadioPlayerService extends Service {
         notificationManager.createNotificationChannel(notificationChannel);
 
         Notification.Builder notificationBuilder = new Notification.Builder(this.getApplicationContext())
-                .setChannelId(NOTIFICATION_CHANNEL_ID)
-                .setContentTitle(NOTIFICATION_TITLE)
-                .setContentText(NOTIFICATION_TEXT)
-                .setOngoing(true)
-                .setPriority(Notification.PRIORITY_MIN);
+            .setChannelId(NOTIFICATION_CHANNEL_ID)
+            .setContentTitle(NOTIFICATION_TITLE)
+            .setContentText(NOTIFICATION_TEXT)
+            .setOngoing(true)
+            .setPriority(Notification.PRIORITY_MIN);
 
         return notificationBuilder.build();
     }
@@ -594,15 +723,22 @@ public class RadioPlayerService extends Service {
     @RequiresApi(api = Build.VERSION_CODES.O)
     private int requestAudioFocus(boolean recreateAttribute) {
         if (this.mAudioAttributes == null || recreateAttribute) {
-            int audioUsageType = this.mRadioStreamType == AudioManager.STREAM_ALARM ? AudioAttributes.USAGE_ALARM : AudioAttributes.USAGE_MEDIA;
-            this.mAudioAttributes = new AudioAttributes.Builder().setUsage(audioUsageType).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
+            int audioUsageType = this.mRadioStreamType == AudioManager.STREAM_ALARM
+                ? C.USAGE_ALARM
+                : C.USAGE_MEDIA;
+
+            this.mAudioAttributes = new android.media.AudioAttributes.Builder()
+                .setUsage(audioUsageType)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build();
         }
 
         if (this.mAudioFocusRequest == null || recreateAttribute) {
             this.mAudioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(this.mAudioAttributes)
                 .setAcceptsDelayedFocusGain(false)
-                .setOnAudioFocusChangeListener(this.audioFocusChangeListener).build();
+                .setOnAudioFocusChangeListener(this.audioFocusChangeListener)
+                .build();
         }
 
         return this.mAudioManager.requestAudioFocus(this.mAudioFocusRequest);
@@ -616,19 +752,6 @@ public class RadioPlayerService extends Service {
         }
 
         return AudioManager.AUDIOFOCUS_REQUEST_FAILED;
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.O)
-    private void setPlayerAudioAttributes(boolean recreate) {
-        if (this.mRadioPlayer != null) {
-            if (this.mPlayerAudioAttributes == null || recreate) {
-                int audioUsageType = this.mRadioStreamType == AudioManager.STREAM_ALARM ? AudioAttributes.USAGE_ALARM : AudioAttributes.USAGE_MEDIA;
-                this.mPlayerAudioAttributes = new com.google.android.exoplayer2.audio.AudioAttributes.Builder()
-                    .setUsage(audioUsageType).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
-            }
-
-            this.mRadioPlayer.setAudioAttributes(this.mPlayerAudioAttributes);
-        }
     }
 
     /**
