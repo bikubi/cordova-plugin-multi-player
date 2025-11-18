@@ -18,7 +18,10 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
 
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
-        log("ACTION - " + action);
+        // prevent noise
+        if (!"getProgress".equals(action)) {
+            log("ACTION - " + action);
+        }
 
         if ("initialize".equals(action)) {
             synchronized (this) {
@@ -224,8 +227,8 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
                 public void run() {
                     synchronized (MultiPlayer.this) {
                         if (isConnected) {
-                            long position = args.getLong(0);
                             try {
+                                long position = args.getLong(0);
                                 mRadioManager.seekTo(position);
                                 callbackContext.success();
                             } catch (Exception e) {
@@ -246,7 +249,7 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
                     synchronized (MultiPlayer.this) {
                         if (isConnected) {
                             try {
-                                callbackContext.success(mRadioManager.getDuration());
+                                callbackContext.success((int) mRadioManager.getDuration());
                             } catch (Exception e) {
                                 log("Exception occurred during getDuration: ".concat(e.getMessage()));
                                 callbackContext.error(e.getMessage());
