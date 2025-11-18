@@ -169,10 +169,16 @@ public class MultiPlayer extends CordovaPlugin implements RadioListener {
             RadioManager.getRequestHandler().post(new Runnable() {
                 public void run() {
                     synchronized (MultiPlayer.this) {
-                        requestedPlay = null; // or args?
                         if (isConnected) {
                             try {
-                                mRadioManager.pauseRadio();
+                                if (mRadioManager.isPaused()) {
+                                    // we ignore requestedPlay...
+                                    log("action pause, isPaused, will play");
+                                    mRadioManager.playRadio();
+                                } else {
+                                    log("action pause, not isPaused, will pause");
+                                    mRadioManager.pauseRadio();
+                                }
                             } catch (Exception e) {
                                 log("Exception occurred during pause: ".concat(e.getMessage()));
                                 callbackContext.error(e.getMessage());

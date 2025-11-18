@@ -167,6 +167,9 @@ public class RadioManager implements IRadioManager {
         this.mService.pause();
     }
 
+    @Override
+    public void playRadio() { this.mService.play(); }
+
     /**
      * Check if radio is playing
      * @return
@@ -175,6 +178,11 @@ public class RadioManager implements IRadioManager {
     public boolean isPlaying() {
         log("IsPlaying : " + this.mService.isPlaying());
         return this.mService.isPlaying();
+    }
+
+    @Override
+    public boolean isPaused() {
+        return this.mService.isPaused();
     }
 
     @Override

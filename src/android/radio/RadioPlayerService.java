@@ -88,8 +88,6 @@ public class RadioPlayerService extends Service {
      */
     private String mRadioUrl;
 
-    private boolean mRadioIsPrepared = false;
-
     /**
      * Auto kill music controls notification on destroy
      */
@@ -254,9 +252,6 @@ public class RadioPlayerService extends Service {
     public void setStreamURL(String mRadioUrl) {
         this.log("setStreamURL " + mRadioUrl);
         this.mRadioUrl = mRadioUrl;
-        if (this.mRadioPlayer != null) {
-            this.preparePlayer();
-        }
     }
 
     public void setAutoKillNotification(boolean mRadioKillNotification) {
@@ -311,6 +306,7 @@ public class RadioPlayerService extends Service {
             this.mRadioState == State.PLAYING
             || this.mRadioState == State.STOPPED_FOCUS_TRANSIENT
             || this.mRadioState == State.STOPPED_FOCUS_LOSS
+            || this.mRadioState == State.PAUSED
         ) {
             // if force to stop, try to stop despite not being as playing
             if (forceStop && this.mRadioState != State.PLAYING) {
@@ -335,13 +331,13 @@ public class RadioPlayerService extends Service {
 
     public void pause() {
         if (this.mRadioPlayer == null) {
-            this.notifyRadioPaused();
             return;
         }
 
         if (this.mRadioState == State.PLAYING) { // || this.mRadioState == State.STOPPED_FOCUS_LOSS) {
             // this.mRadioPlayer.pause();
             this.mRadioPlayer.setPlayWhenReady(false);
+            // this.notifyRadioPaused();
         }
     }
 
@@ -350,6 +346,13 @@ public class RadioPlayerService extends Service {
             return true;
         }
 
+        return false;
+    }
+
+    public boolean isPaused() {
+        if (State.PAUSED == this.mRadioState) {
+            return true;
+        }
         return false;
     }
 
@@ -431,16 +434,6 @@ public class RadioPlayerService extends Service {
         for (RadioListener mRadioListener : mListenerList) {
             mRadioListener.onError();
         }
-    }
-
-    private void preparePlayer() {
-        this.log("preparePlayer");
-        DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(this.getApplicationContext(), "CordovaMultiPlayer");
-        ExtractorsFactory extractorsFactory = new DefaultExtractorsFactory();
-        Handler mainHandler = new Handler();
-        MediaSource mediaSource = new ExtractorMediaSource(Uri.parse(this.mRadioUrl), dataSourceFactory, extractorsFactory, mainHandler, null);
-        this.mRadioPlayer.prepare(mediaSource);
-        this.mRadioIsPrepared = true;
     }
 
     /**
@@ -564,7 +557,7 @@ public class RadioPlayerService extends Service {
                 // &&
                 RadioPlayerService.this.mRadioState == State.PAUSED
             ) {
-                RadioPlayerService.this.log("Player state changed. Paused= playbackState " + playbackState + " playWhenReady " + playWhenReady);
+                RadioPlayerService.this.log("Player state changed. playbackState: " + playbackState);
                 RadioManager.getRequestHandler().post(new Runnable() {
                     public void run() {
                         RadioPlayerService.this.releasePlayer();
@@ -614,7 +607,7 @@ public class RadioPlayerService extends Service {
                 RadioPlayerService.this.mRadioState = State.PLAYING;
                 RadioPlayerService.this.notifyRadioStartedFocusTransient();
             } else {
-                RadioPlayerService.this.log("Player state changed. ExoPlayer playWhenReady: " + playWhenReady + " playbackState: " + playbackState + ", Current state: " + RadioPlayerService.this.mRadioState);
+                RadioPlayerService.this.log("Player state changed. playbackState: " + playbackState + ", Current state: " + RadioPlayerService.this.mRadioState);
             }
         }
 
@@ -634,11 +627,19 @@ public class RadioPlayerService extends Service {
                     RadioPlayerService.this.mRadioState = State.PLAYING;
                     RadioPlayerService.this.notifyRadioStarted();
                 }
+            } else if (!playWhenReady) {
+                if (reason == ExoPlayer.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+                    RadioPlayerService.this.log("Player state changed when ready. Maybe pause, reason == ...USER_REQUEST");
+                    RadioPlayerService.this.mRadioState = State.PAUSED;
+                    RadioPlayerService.this.notifyRadioPaused();
+                } else if (reason == 1) {
+                    RadioPlayerService.this.log("Player state changed when ready. Maybe pause, reason == 1");
+                    RadioPlayerService.this.mRadioState = State.PAUSED;
+                    RadioPlayerService.this.notifyRadioPaused();
+                } else {
+                    RadioPlayerService.this.log("Player state changed when ready. Maybe pause, reason other");
+                }
             }
-        }
-
-        @override
-        public void onMediaMetaDataChanged() {
         }
 
     };

@@ -9,8 +9,10 @@ public interface IRadioManager {
     void startRadio(int streamType);
     void stopRadio();
     void pauseRadio();
+    void playRadio();
 
     boolean isPlaying();
+    boolean isPaused();
 
     JSONObject getProgress();
     long getDuration();
