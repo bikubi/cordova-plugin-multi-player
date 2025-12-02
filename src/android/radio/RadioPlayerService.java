@@ -27,8 +27,10 @@ import android.media.AudioFocusRequest;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
+import androidx.media3.common.Player;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
@@ -482,6 +484,17 @@ public class RadioPlayerService extends Service {
 
             this.mRadioPlayer.setMediaItem(mediaItem);
             this.mRadioPlayer.addListener(this.playerEventListener);
+            this.mRadioPlayer.addListener(new Player.Listener() {
+                @Override
+                public void onMediaMetadataChanged(MediaMetadata mediaMetadata) {
+                    if (mediaMetadata.title != null) {
+                        RadioPlayerService.this.log("metadata change, title:" + mediaMetadata.title);
+                        RadioPlayerService.this.notifyRadioMetadata((String) mediaMetadata.title);
+                    } else {
+                        RadioPlayerService.this.log("metadata change");
+                    }
+                }
+            });
             this.mRadioPlayer.prepare();
             // this.preparePlayer();
         } else if (changeAudioStreamType) {
