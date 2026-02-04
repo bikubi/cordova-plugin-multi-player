@@ -215,9 +215,8 @@ public class RadioPlayerService extends Service {
 
         PowerManager powerMgr = (PowerManager) this.getSystemService(POWER_SERVICE);
 
-        this.wakeLock = powerMgr.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BackgroundMode");
-
-        this.wakeLock.acquire();
+        this.wakeLock = powerMgr.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CordovaPluginMultiPlayer:RadioPlayerService");
+        this.log("wakeLock created");
     }
 
     @Override
@@ -244,7 +243,8 @@ public class RadioPlayerService extends Service {
         });
 
         if (this.wakeLock != null) {
-            this.wakeLock.release();
+            if (this.wakeLock.isHeld()) this.wakeLock.release();
+            this.log("wakeLock release onDestroy");
             this.wakeLock = null;
         }
 
@@ -394,36 +394,49 @@ public class RadioPlayerService extends Service {
         for (RadioListener mRadioListener : this.mListenerList) {
             mRadioListener.onRadioStarted();
         }
+        // this.log("wakeLock acquired notifyRadioStarted");
+        if (!this.wakeLock.isHeld()) this.wakeLock.acquire();
     }
 
     private void notifyRadioStopped() {
         for (RadioListener mRadioListener : this.mListenerList) {
             mRadioListener.onRadioStopped();
         }
+        // this.log("wakeLock release notifyRadioStopped");
+        if (this.wakeLock.isHeld()) this.wakeLock.release();
     }
 
     private void notifyRadioPaused() {
         for (RadioListener mRadioListener : this.mListenerList) {
             mRadioListener.onRadioPaused();
         }
+        // this.log("wakeLock release notifyRadioPaused");
+        // debatable...
+        if (this.wakeLock.isHeld()) this.wakeLock.release();
     }
 
     private void notifyRadioStoppedFocusTransient() {
         for (RadioListener mRadioListener : mListenerList) {
             mRadioListener.onRadioStoppedFocusTransient();
         }
+        // this.log("wakeLock release notifyRadioStoppedFocusTransient");
+        if (this.wakeLock.isHeld()) this.wakeLock.release();
     }
 
     private void notifyRadioStartedFocusTransient() {
         for (RadioListener mRadioListener : mListenerList) {
             mRadioListener.onRadioStartedFocusTransient();
         }
+        // this.log("wakeLock acquire notifyRadioStartedFocusTransient");
+        if (!this.wakeLock.isHeld()) this.wakeLock.acquire();
     }
 
     private void notifyRadioStoppedFocusLoss() {
         for (RadioListener mRadioListener : mListenerList) {
             mRadioListener.onRadioStoppedFocusLoss();
         }
+        // this.log("wakeLock release notifyRadioStoppedFocusLoss");
+        if (this.wakeLock.isHeld()) this.wakeLock.release();
     }
 
     private void notifyRadioMetadata(String metadata) {
@@ -654,6 +667,18 @@ public class RadioPlayerService extends Service {
                 }
             }
         }
+
+        /* @Override
+        public void onMediaMetaDataChanged(MediaMetadata mediaMetadata) {
+            RadioPlayerService.this.log("metadata change " + mediaMetadata.toString());
+            RadioPlayerService.this.notifyRadioMetadata((String) mediaMetadata.title);
+            /* for (int i = 0; i < metadata.length(); i++) {
+                Metadata.Entry entry = metadata.get(i);
+                RadioPlayerService.this.log("metadata " + entry.toString());
+                // this might be wrapped in garbage, like `ICY: title="foo bar"`, we'll handle this on the JS side
+                RadioPlayerService.this.notifyRadioMetadata(entry.toString());
+            }*/
+        // }
 
     };
 
